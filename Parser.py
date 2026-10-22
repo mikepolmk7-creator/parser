@@ -115,9 +115,9 @@ def parse_doc(el):
             d["city"] = e.get("Наим")
         elif t == "НаселПункт" and not d["city"]:
             d["city"] = e.get("Наим")
-        elif t == "ОКВЭДОсн":
+        elif t == "СвОКВЭДОсн":
             d["okved"] = e.get("КодОКВЭД")
-        elif t == "ОКВЭДДоп":
+        elif t == "СвОКВЭДДоп":
             if e.get("КодОКВЭД"):
                 d["extra"].append(e.get("КодОКВЭД"))
     return d
@@ -287,7 +287,9 @@ def cmd_classify(args):
     con = db()
     con.execute("DELETE FROM leads")
     rows = con.execute(
-        "SELECT e.* FROM enrichment e WHERE e.error IS NULL").fetchall()
+        """SELECT e.*, c.msp_category AS cat FROM enrichment e
+           LEFT JOIN companies c ON c.inn = e.inn
+           WHERE e.error IS NULL""").fetchall()
     kept = 0
     for e in rows:
         okved = e["okved"] or ""
@@ -298,8 +300,16 @@ def cmd_classify(args):
         rev = e["revenue"]
         tags, review, reason = [], 0, ""
         if rev is None:
-            review, reason = 1, "нет данных об обороте"
+            # оборот недоступен: сегменты по ОКВЭД и категории МСП
+            review = 1
+            reason = f"оборот не проверен, категория МСП={e['cat']}"
             tags = ["review"]
+            if e["cat"] == "1":          # микропредприятие
+                tags += ["bukh", "it"]
+            if starts(okved, KASSA_PREFIXES):
+                tags.append("kassa")
+            if starts(okved, RKEEPER_PREFIXES):
+                tags.append("rkeeper")
         else:
             if rev <= LIMIT_BUKH:
                 tags.append("bukh")
